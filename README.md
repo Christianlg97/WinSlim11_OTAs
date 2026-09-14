@@ -4,7 +4,8 @@ Aplicación AutoHotkey v2 para WinSlim 11 y WinSlim 10, con icono `wu.ico` y not
 
 
 
-<img width="953" height="647" alt="image" src="https://github.com/user-attachments/assets/d3572f3c-5f17-4fa8-aede-ccd0dc6e0439" />
+<img width="956" height="645" alt="image" src="https://github.com/user-attachments/assets/34599a1a-d625-46f4-9251-503e78464c63" />
+
 
 
 
