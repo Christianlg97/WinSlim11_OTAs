@@ -13,7 +13,7 @@ New-Item -ItemType Directory -Force $buildDir | Out-Null
 $outputFile = Join-Path $buildDir ([guid]::NewGuid().ToString('N') + '.exe')
 $icon = Join-Path $PSScriptRoot 'assets\update.ico'
 $variants = if ($Variant -eq 'All') { @('WinSlim11','WinSlim10') } else { @($Variant) }
-$files = @('UpdateSCR.cmd','basebandUPD.reg','changelog.md','brand.ini','ui.ini')
+$files = @('UpdateSCR.cmd','basebandUPD.reg','ui.ini','changelog.md')
 foreach ($name in $variants) {
     foreach ($file in $files) {
         $path = Join-Path $PSScriptRoot "packages\$name\Resources\$file"
@@ -28,8 +28,10 @@ if (!$ResourcesOnly) {
 foreach ($file in @($compiler, $base, $inputFile)) {
     if (!(Test-Path -LiteralPath $file)) { throw "No se encuentra: $file" }
 }
-$process = Start-Process -FilePath $compiler -ArgumentList @('/in', "`"$inputFile`"", '/out', "`"$outputFile`"", '/base', "`"$base`"", '/icon', "`"$icon`"", '/compress', '0', '/silent') -WindowStyle Hidden -Wait -PassThru
+$compilerLog = Join-Path $buildDir 'ahk2exe.log'
+$process = Start-Process -FilePath $compiler -ArgumentList @('/in', "`"$inputFile`"", '/out', "`"$outputFile`"", '/base', "`"$base`"", '/icon', "`"$icon`"", '/compress', '0', '/silent', 'verbose') -NoNewWindow -Wait -PassThru -RedirectStandardOutput $compilerLog
 if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $outputFile)) {
+    if (Test-Path -LiteralPath $compilerLog) { Get-Content -LiteralPath $compilerLog | Write-Host }
     throw "Fallo de compilacion: $($process.ExitCode)"
 }
 }
@@ -51,4 +53,3 @@ try {
     if (Test-Path -LiteralPath $outputFile) { Remove-Item -LiteralPath $outputFile }
 }
 Write-Host 'Edita source/packages; los archivos gestionados de Output se regeneran.'
-

@@ -1,6 +1,4 @@
-﻿# Notas de la actualización
-
-## Vista previa del instalador
+﻿## Vista previa del instalador
 
 Este paquete permite revisar la interfaz de WinSlim Update.
 Todavía no contiene una actualización del sistema.
@@ -14,3 +12,6 @@ Todavía no contiene una actualización del sistema.
 
 Aquí aparecerán la descripción, las mejoras y las correcciones
 cuando se prepare un nuevo paquete OTA.
+
+
+
