@@ -1,17 +1,20 @@
-﻿## Vista previa del instalador
+﻿## Mejoramos en la estabilidad de juegos que usan MMCSS.
 
-Este paquete permite revisar la interfaz de WinSlim Update.
-Todavía no contiene una actualización del sistema.
+- Se ajusta el valor de prioridad de juego de 7 a 6 para evitar el solapamiento con tareas de audio y ProAudio, 
+  mejorando el FramPacing y la estabilidad de los FPS, mientras se ejecutan otras aplicaciones multimedia.
 
-## Cambios incluidos
 
-- Ninguno. No se modifica el registro ni los servicios.
-- La instalación y el reinicio están deshabilitados.
 
-## Próxima actualización
+## Desactivamos MPO (MultiPlane Overlay).
 
-Aquí aparecerán la descripción, las mejoras y las correcciones
-cuando se prepare un nuevo paquete OTA.
+- Se desactiva la función MPO (MultiPlane Overlay) a través del registro de Windows. 
+  Esto puede mejora la estabilidad de los FPS y elimina el Stuttering en muchos juegos mal optimizados, en especial en GPUs Modernas
+
+
+
+## Próximas actualizaciones y mejoras
+
+- Estamos desarrollando un sistema OTA integrado en la app WinSlim Update.
 
 
 
