@@ -2,7 +2,8 @@
 
 Aplicación AutoHotkey v2 para WinSlim 11 y WinSlim 10, con icono `wu.ico` y notas leídas desde Markdown.
 
-<img width="965" height="656" alt="image" src="https://github.com/user-attachments/assets/5d1e785f-c0b9-4160-904d-283e510b4f9a" />
+<img width="953" height="647" alt="image" src="https://github.com/user-attachments/assets/d3572f3c-5f17-4fa8-aede-ccd0dc6e0439" />
+
 
 
 **Estado actual: vista previa.** Los EXE requieren administrador, pero no ejecutan actualizaciones ni reinicios. CMD y REG no contienen cambios. No se utiliza VBS, RunOnce ni notificación posterior al arranque.
