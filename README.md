@@ -10,7 +10,7 @@ Aplicación AutoHotkey v2 para WinSlim 11 y WinSlim 10, con icono `wu.ico` y not
 
 
 
-**Estado actual: vista previa.** Los EXE requieren administrador, pero no ejecutan actualizaciones ni reinicios. CMD y REG no contienen cambios. No se utiliza VBS, RunOnce ni notificación posterior al arranque.
+**Estado actual: motor habilitado** (`previewOnly := false` en `Install_Update.ahk`). Los EXE requieren administrador; **Instalar actualización** ejecuta `Resources\UpdateSCR.cmd` elevado, y ese CMD importa `Resources\basebandUPD.reg`. Al terminar se ofrece reiniciar ahora o más tarde. No se utiliza VBS, RunOnce ni notificación posterior al arranque. Con `previewOnly := true` el botón queda deshabilitado y no se ejecuta nada.
 
 ## Organización
 
@@ -45,8 +45,8 @@ Dentro de `source/packages/WinSlim11/Resources` o `source/packages/WinSlim10/Res
 | --- | --- |
 | `changelog.md` | Descripción visible en la interfaz. Guardar como UTF-8. |
 | `ui.ini` | Títulos, resumen, etiquetas y botones. Guardar como UTF-8. |
-| `UpdateSCR.cmd` | Operaciones del futuro parche; ahora no hace cambios. |
-| `basebandUPD.reg` | Cambios de registro del futuro parche; ahora vacío. |
+| `UpdateSCR.cmd` | Operaciones del parche. La plantilla importa `basebandUPD.reg`, comprueba el resultado y termina con código 0; añade ahí los pasos adicionales. |
+| `basebandUPD.reg` | Cambios de registro que importa el CMD. Formato regedit 5.00 (UTF-16 LE) con raíces completas: `HKEY_LOCAL_MACHINE`, no `HKLM` (las abreviadas se ignoran en silencio). |
 | Campo `Brand` de `ui.ini` | Marca de la variante: WinSlim 11 o WinSlim 10. |
 
 El icono compartido se edita en `source/assets/update.ico`. El build lo incorpora al EXE y lo copia a cada paquete.
@@ -64,13 +64,13 @@ ChangelogTitle=Novedades y mejoras
 Footer=Guarda tu trabajo antes de instalar.
 ```
 
-`{brand}` se sustituye automáticamente por la marca de la variante. `WindowTitle` controla la barra de título; `AppName`, `SidebarSubtitle` y `Navigation` la barra lateral; `StatusTitle` y `PreviewStatus` el indicador inferior de la barra lateral; `InstallButton`, `LogButton` y `CloseButton` los botones. Todas las claves son explícitas: si falta una obligatoria se indica el error; no hay textos de respaldo ocultos en AHK. El archivo no contiene comandos ni activa la instalación.
+`{brand}` se sustituye automáticamente por la marca de la variante y `{version}` por la versión del programa (la del recurso de versión del EXE, fijada con `;@Ahk2Exe-SetVersion` en `Install_Update.ahk`). `WindowTitle` controla la barra de título; `AppName`, `SidebarSubtitle`, `Navigation` y `VersionLabel` la barra lateral; `InstallButton`, `LogButton` y `CloseButton` los botones. Todas las claves son explícitas: si falta una obligatoria se indica el error; no hay textos de respaldo ocultos en AHK. El archivo no contiene comandos ni activa la instalación.
 
-Las claves `StateIdle`…`StateError`, `RecoveryAvailable`, `RollbackAvailable`, `RestartButton`, `LaterButton`, `RetryButton`, `InstallingDetail` e `InstalledDetail` son las etiquetas de los estados del motor (`source/UpdaterState.ahk`). El INI cambia el texto, nunca el estado real: mientras la instalación esté deshabilitada solo se muestra `PreviewStatus`, y las indicaciones de recuperación o rollback permanecen ocultas hasta que un componente real las confirme.
+La **franja de estado** del panel de acciones (en negrita, junto a los botones) muestra el mensaje operativo del motor cuando lo hay (`InstallingDetail`, `InstalledDetail` o el texto de un error) y, si no, la etiqueta del estado actual: `PreviewStatus` con el motor deshabilitado, o `StateIdle`…`StateError` según `source/UpdaterState.ahk`. Si el mensaje no cabe junto a los botones pasa a una fila propia encima de ellos. El INI cambia el texto, nunca el estado real; `RecoveryAvailable` y `RollbackAvailable` permanecen ocultas hasta que un componente real las confirme, y `RestartButton`, `LaterButton` y `RetryButton` sustituyen a los botones tras la instalación o un error.
 
-Usa una sola línea por valor y textos breves: el título principal debe caber en unos 40 caracteres; subtítulo y pie en unos 80; identificador del paquete en unos 60; etiquetas laterales y botones en unos 22. Son orientaciones, pues la anchura depende de los caracteres. Las descripciones largas deben ir en `changelog.md`, que permite desplazamiento.
+Usa una sola línea por valor y textos breves: el título principal debe caber en unos 40 caracteres; subtítulo y pie en unos 80; identificador del paquete en unos 60; mensajes de la franja de estado en unos 70 (con más pasan a su propia fila); etiquetas laterales y botones en unos 22. Son orientaciones, pues la anchura depende de los caracteres. Las descripciones largas deben ir en `changelog.md`, que permite desplazamiento.
 
-Después ejecuta `& .\source\build.ps1 -ResourcesOnly` y vuelve a abrir el EXE. No hace falta recompilar para cambiar el INI o el MD. Se mantiene un único indicador fijo de **Instalación deshabilitada** mientras el motor esté bloqueado; los mensajes operativos de error y seguridad siguen ligados al comportamiento del programa.
+Después ejecuta `& .\source\build.ps1 -ResourcesOnly` y vuelve a abrir el EXE. No hace falta recompilar para cambiar el INI o el MD. Mientras el motor esté bloqueado la franja de estado muestra un único indicador fijo, **Instalación deshabilitada**; los mensajes operativos de error y seguridad siguen ligados al comportamiento del programa.
 
 El panel de notas es un control Rich Edit nativo, desplazable y de solo lectura. Presenta un subconjunto sencillo de Markdown: títulos `#`…`######` en negrita y mayor tamaño, listas `-`/`*` como viñetas y `**negrita**` en línea. No es un navegador Markdown completo; no ejecuta HTML, RTF ni scripts. Lee el MD al abrir la aplicación y muestra un aviso si falta o está vacío. La ventana se puede redimensionar (mínimo 860×560) y el panel de notas crece con ella.
 
@@ -119,8 +119,8 @@ También puedes compilar con Ahk2Exe: fuente `source/Install_Update.ahk`, base `
 
 1. Windows exige permisos de administrador mediante el manifiesto `requireAdministrator`. Cancelar UAC impide abrir la aplicación.
 2. El EXE lee todos los textos descriptivos y la marca desde `Resources/ui.ini`, el icono y las notas desde `Resources/changelog.md`, junto al ejecutable.
-3. Muestra la variante y sus notas. Actualmente Instalar permanece deshabilitado.
-4. Cerrar termina la aplicación. No crea RunOnce, tareas programadas ni avisos para el siguiente arranque.
+3. Muestra la variante, sus notas y la versión del programa. **Instalar actualización** ejecuta `Resources\UpdateSCR.cmd` elevado y guarda su salida en `%ProgramData%\WinSlim\OTA\Logs\<fecha>-<pid>.log` (botón **Ver actividad**).
+4. Si el CMD devuelve 0, la franja muestra `InstalledDetail` y los botones pasan a **Reiniciar ahora** / **Más tarde**; si no, muestra el error y ofrece **Reintentar**. Cerrar termina la aplicación. No crea RunOnce, tareas programadas ni avisos para el siguiente arranque.
 
 Para ejecutar la versión actual abre `Output/WinSlim11/Install_Update.exe` o `Output/WinSlim10/Install_Update.exe`. El equipo destinatario no necesita AutoHotkey instalado. Ambos son x64; WinSlim 10 tiene su marca y recursos separados, pero todavía requiere pruebas en ese sistema.
 
@@ -135,13 +135,15 @@ El fuente AHK también exige elevación y, al ejecutarlo directamente, utiliza p
 
 No distribuyas source ni .build. Los dos paquetes son independientes y pueden tener notas y operaciones diferentes.
 
-## Activación futura de una OTA real
+## Motor de instalación
 
-Cambiar el CMD o REG **no activa la instalación**. El fuente mantiene `previewOnly := true` y el botón deshabilitado. Para una entrega real hay que habilitar explícitamente el motor y adaptar los textos y estados de la interfaz; no basta con cambiar una variable para considerar terminado el producto.
+`previewOnly` en `Install_Update.ahk` decide si el motor está activo. Con `true` el botón queda deshabilitado y no se ejecuta nada; con `false` (estado actual) **Instalar actualización** lanza el motor.
 
-El motor reservado ejecuta el CMD elevado de forma síncrona, captura salida en `%ProgramData%\WinSlim\OTA\Logs` y comprueba su código de salida. El CMD será responsable de importar el REG cuando proceda, comprobar cada operación (`if errorlevel 1 exit /b N`) y devolver cero únicamente al terminar correctamente. El EXE no importa el REG por separado.
+El motor ejecuta el CMD elevado de forma síncrona, captura su salida en `%ProgramData%\WinSlim\OTA\Logs` y comprueba el código de salida. **El EXE no importa el REG por separado**: es el CMD quien lo hace. La plantilla de `UpdateSCR.cmd` importa `basebandUPD.reg` con `reg import`, comprueba `errorlevel` y termina con 0; cualquier operación adicional debe ir detrás con su propia comprobación (`if errorlevel 1 exit /b N`). El CMD recibe `%WS_OTA_RES%` (carpeta Resources) y `%WS_OTA_LOG%` (archivo de registro) y fuerza UTF-8 (`chcp 65001`) para que el log se lea bien. Al ejecutarse elevado, las claves `HKEY_CURRENT_USER` del REG se aplican al perfil de la cuenta que aprobó el UAC.
 
-La barra es indeterminada mientras se ejecuta un CMD arbitrario. En una entrega activa, tras el éxito se podrá elegir reiniciar o hacerlo más tarde. No hay rollback automático, recuperación transaccional, firma del paquete ni validación de builds. Un fallo podría dejar cambios parciales: deben resolverse y probarse esos aspectos antes de distribuir parches reales.
+Para probar un CMD sin tocar el equipo, copia la plantilla a una carpeta temporal con un `basebandUPD.reg` inofensivo (por ejemplo una clave bajo `HKEY_CURRENT_USER\Software`), define `WS_OTA_RES` y `WS_OTA_LOG` y ejecútalo con la misma orden que usa el motor: `cmd /D /V:OFF /S /C ""%WS_OTA_RES%\UpdateSCR.cmd" >> "%WS_OTA_LOG%" 2>&1"`.
+
+La barra es indeterminada (marquesina) mientras se ejecuta un CMD arbitrario y pasa al 100 % al terminar. No hay rollback automático, recuperación transaccional, firma del paquete ni validación de builds. Un fallo podría dejar cambios parciales: deben resolverse y probarse esos aspectos antes de distribuir parches reales.
 
 ## Comprobaciones
 
@@ -158,7 +160,7 @@ Para una actualización real, probar en máquinas virtuales desechables de cada 
 
 ## Fuente única de los textos descriptivos
 
-`source/packages/<variante>/Resources/ui.ini` contiene **todos los textos descriptivos de la interfaz**, incluida la marca (`Brand`) y la etiqueta de estado (`PreviewStatus`). `changelog.md` contiene **únicamente las notas del parche**. Ya no existe un `brand.ini` activo ni se leen descripciones de respaldo desde AHK. Los mensajes operativos de errores del motor siguen en el código.
+`source/packages/<variante>/Resources/ui.ini` contiene **todos los textos descriptivos de la interfaz**, incluida la marca (`Brand`), la etiqueta de estado (`PreviewStatus`) y el rótulo de versión (`VersionLabel`). `changelog.md` contiene **únicamente las notas del parche**. Ya no existe un `brand.ini` activo ni se leen descripciones de respaldo desde AHK. Los mensajes operativos de errores del motor siguen en el código.
 
 Los cambios anteriores en los textos de respaldo del AHK no aparecían porque el INI tenía prioridad. Se han trasladado al INI las etiquetas editadas y el identificador del paquete de WinSlim 11. La configuración previa (`brand.ini` y los textos de respaldo del AHK) puede consultarse en el historial de Git; no se utiliza.
 

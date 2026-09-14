@@ -15,9 +15,11 @@ class UpdaterView {
         Track: 0x393939, Bar: 0xD8D8D8}
     static Radius := {Panel: 10, Pill: 8, Button: 8}
 
-    __New(texts, resources, state, onInstall, onClose, onLog) {
+    __New(texts, resources, state, version, onInstall, onClose, onLog) {
         this.Texts := texts
         this.State := state
+        this.AppVersion := version
+        this.Message := ""
         this.ButtonStyles := Map()
         this.Rects := Map()
         this.Scale := A_ScreenDPI / 96
@@ -38,10 +40,7 @@ class UpdaterView {
         window.AddText("x24 y104 w184 h28 Background111111", this.Text("AppName"))
         window.SetFont("s9 Norm cB6B6B6")
         window.AddText("x24 y138 w184 h24 Background111111", this.Text("SidebarSubtitle"))
-        window.SetFont("s9 Bold cBBBBBB")
-        this.SidebarTitle := window.AddText("x24 y544 w184 h24 Background111111", this.Text("StatusTitle"))
-        window.SetFont("s9 Norm cB6B6B6")
-        this.SidebarStatus := window.AddText("x24 y568 w182 h40 Background111111", "")
+        this.VersionLabel := window.AddText("x24 y574 w184 h24 Background111111", this.Text("VersionLabel"))
         window.SetFont("s22 Bold cF4F4F4")
         this.Title := window.AddText("x246 y28 w680 h42", this.Text("Title"))
         window.SetFont("s10 Norm cB6B6B6")
@@ -53,7 +52,9 @@ class UpdaterView {
         window.SetFont("s9 Norm cB6B6B6")
         this.Detail := window.AddText("x0 y0 w100 h38 Background222222", this.Text("Footer"))
         this.Recovery := window.AddText("x0 y0 w100 h24 Hidden Background222222", "")
-        window.SetFont("s10 cEAEAEA")
+        window.SetFont("s9 Bold cF0F0F0")
+        this.Banner := window.AddText("x0 y0 w100 h20 Background222222", "")
+        window.SetFont("s10 Norm cEAEAEA")
         this.Install := this.Button(this.Text("InstallButton"), true)
         this.Logs := this.Button(this.Text("LogButton"))
         this.Logs.Visible := false
@@ -79,7 +80,7 @@ class UpdaterView {
     }
 
     Text(key) {
-        return StrReplace(this.Texts[key], "{brand}", this.Texts["Brand"])
+        return StrReplace(StrReplace(this.Texts[key], "{brand}", this.Texts["Brand"]), "{version}", this.AppVersion)
     }
 
     Show() {
@@ -120,10 +121,21 @@ class UpdaterView {
     Layout(width, height) {
         ; Coordinates are AHK logical units; OnPaint scales the painted rectangles to pixels.
         side := UpdaterView.SidebarWidth, padding := UpdaterView.Padding, gap := UpdaterView.Gap
-        x := side + 28, w := width - x - 28
+        x := side + 28, w := width - x - 28, inner := w - 2 * padding
         packageY := 122, packageH := 54
         notesY := packageY + packageH + gap
-        actionY := height - 80
+        ; Status banner: beside the buttons when it fits, otherwise on its own row above them.
+        buttonsW := 186 + 12 + 128
+        bannerLeft := x + padding + (this.Logs.Visible ? 130 + 12 : 0)
+        bannerRoom := x + w - padding - buttonsW - 12 - bannerLeft
+        size := UpdaterView.MeasureText(SendMessage(0x31, 0, 0, this.Banner.Hwnd), this.Banner.Text)
+        lineH := Max(16, Round(size[2] / this.Scale))
+        textW := Round(size[1] / this.Scale) + 4
+        stacked := textW > bannerRoom
+        bannerH := stacked ? lineH * (textW > inner ? 2 : 1) : lineH
+        actionsH := stacked ? bannerH + 70 : 60
+        actionY := height - 20 - actionsH
+        buttonY := actionY + actionsH - 48
         notesBottom := actionY - gap
         progressH := 8
         progressY := notesBottom - 12 - progressH
@@ -134,20 +146,23 @@ class UpdaterView {
         this.Rects["Pill"] := [16, 190, side - 32, 44]
         this.Rects["Package"] := [x, packageY, w, packageH]
         this.Rects["Notes"] := [x, notesY, w, notesBottom - notesY]
-        this.Rects["Actions"] := [x, actionY, w, 60]
-        this.Rects["Progress"] := [x + padding, progressY, w - 2 * padding, progressH]
-        this.SidebarTitle.Move(24, height - 86, 184, 24)
-        this.SidebarStatus.Move(24, height - 60, 182, 44)
+        this.Rects["Actions"] := [x, actionY, w, actionsH]
+        this.Rects["Progress"] := [x + padding, progressY, inner, progressH]
+        this.VersionLabel.Move(24, height - 46, 184, 24)
         this.Title.Move(x, 28, w, 42)
         this.Subtitle.Move(x, 80, w, 32)
-        this.PackageTitle.Move(x + padding, packageY + 15, w - 2 * padding, 24)
-        this.NotesTitle.Move(x + padding, notesY + 15, w - 2 * padding, 28)
-        this.Notes.Move(x + padding, noteTop, w - 2 * padding, Max(80, detailY - 8 - noteTop))
-        this.Detail.Move(x + padding, detailY, w - 2 * padding, 38)
-        this.Recovery.Move(x + padding, recoveryY, w - 2 * padding, 24)
-        this.Close.Move(x + w - padding - 128, actionY + 12, 128, 36)
-        this.Install.Move(x + w - padding - 128 - 12 - 186, actionY + 12, 186, 36)
-        this.Logs.Move(x + padding, actionY + 12, 130, 36)
+        this.PackageTitle.Move(x + padding, packageY + 15, inner, 24)
+        this.NotesTitle.Move(x + padding, notesY + 15, inner, 28)
+        this.Notes.Move(x + padding, noteTop, inner, Max(80, detailY - 8 - noteTop))
+        this.Detail.Move(x + padding, detailY, inner, 38)
+        this.Recovery.Move(x + padding, recoveryY, inner, 24)
+        if stacked
+            this.Banner.Move(x + padding, actionY + 12, inner, bannerH)
+        else
+            this.Banner.Move(bannerLeft, actionY + (actionsH - lineH) // 2, Max(1, bannerRoom), lineH)
+        this.Close.Move(x + w - padding - 128, buttonY, 128, 36)
+        this.Install.Move(x + w - padding - buttonsW, buttonY, 186, 36)
+        this.Logs.Move(x + padding, buttonY, 130, 36)
         this.LastSize := {Width: width, Height: height}
         ; The painted surfaces moved along with the controls: repaint the whole window once, children included.
         DllCall("RedrawWindow", "Ptr", this.Gui.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 0x85)
@@ -155,7 +170,8 @@ class UpdaterView {
 
     ApplyState() {
         state := this.State.Value
-        this.SidebarStatus.Text := this.Text(state = "Disabled" ? "PreviewStatus" : "State" state)
+        ; Status banner: the engine message when there is one, otherwise the label of the current state.
+        this.Banner.Text := this.Message != "" ? this.Message : this.Text(state = "Disabled" ? "PreviewStatus" : "State" state)
         this.Install.Enabled := this.State.CanInstall() || (!this.State.Disabled && state = "RestartRequired")
         this.Close.Enabled := state != "Installing"
         this.Install.Text := this.Text(state = "RestartRequired" ? "RestartButton" : (state = "Error" ? "RetryButton" : "InstallButton"))
@@ -168,6 +184,29 @@ class UpdaterView {
         this.Recovery.Visible := this.Recovery.Text != ""
         if this.HasOwnProp("LastSize")
             this.Layout(this.LastSize.Width, this.LastSize.Height)
+    }
+
+    ; Operational message from the engine (installing, finished, failure); empty restores the state label.
+    SetMessage(text) {
+        this.Message := text
+        this.ApplyState()
+    }
+
+    ShowLogs(visible) {
+        this.Logs.Visible := !!visible
+        if this.HasOwnProp("LastSize")
+            this.Layout(this.LastSize.Width, this.LastSize.Height)
+    }
+
+    ; Single-line extent of text in a GDI font, in pixels: [width, height].
+    static MeasureText(font, text) {
+        dc := DllCall("GetDC", "Ptr", 0, "Ptr")
+        previous := DllCall("SelectObject", "Ptr", dc, "Ptr", font, "Ptr")
+        rect := Buffer(16, 0)
+        DllCall("DrawText", "Ptr", dc, "Str", text, "Int", -1, "Ptr", rect, "UInt", 0x420) ; DT_CALCRECT | DT_SINGLELINE
+        DllCall("SelectObject", "Ptr", dc, "Ptr", previous, "Ptr")
+        DllCall("ReleaseDC", "Ptr", 0, "Ptr", dc)
+        return [NumGet(rect, 8, "Int"), NumGet(rect, 12, "Int")]
     }
 
     ; Progress bar: 0-100 determinate value, or an animated marquee while the engine runs a CMD.

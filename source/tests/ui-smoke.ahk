@@ -10,7 +10,7 @@ resources := A_ScriptDir "\..\packages\WinSlim11\Resources"
 texts := LoadTexts(resources "\ui.ini")
 state := UpdaterState(true)
 closing := false
-view := UpdaterView(texts, resources, state, (*) => 0, CloseView, (*) => 0)
+view := UpdaterView(texts, resources, state, "9.9.9", (*) => 0, CloseView, (*) => 0)
 if A_Args.Length && A_Args[1] = "--preview" {
     view.Show()
     return
@@ -45,6 +45,8 @@ try Assert(InStr(ChangelogView.Read(blankNotes), "Todavía no hay notas"), "Blan
 finally FileDelete(blankNotes)
 Assert(!view.Install.Enabled, "Preview enabled installation")
 Assert(!view.Recovery.Visible, "Unknown recovery must stay hidden")
+Assert(view.VersionLabel.Text = StrReplace(texts["VersionLabel"], "{version}", "9.9.9"), "Version label incorrect")
+Assert(view.Banner.Text = texts["PreviewStatus"], "Preview banner must show the disabled label")
 
 view.Gui.Show("Hide w960 h620")
 for size in [[860,560], [960,620], [1200,760]] {
@@ -92,6 +94,25 @@ Assert(view.Install.Text = texts["RestartButton"], "Restart label incorrect")
 state.RecoveryAvailable := 1
 view.ApplyState()
 Assert(view.Recovery.Visible, "Confirmed recovery not displayed")
+
+; Status banner: engine messages replace the state label; short ones share the row with the buttons,
+; long ones move to their own row (window is 1200 wide at this point).
+Assert(view.Banner.Text = texts["StateRestartRequired"], "Banner must fall back to the state label")
+view.SetMessage("Listo.")
+Assert(view.Banner.Text = "Listo." && view.Rects["Actions"][4] = 60, "Short banner must share the row with the buttons")
+view.ShowLogs(true)
+view.Banner.GetPos(&bx, &by, &bw, &bh)
+view.Install.GetPos(&ix, &iy, &iw, &ih)
+view.Logs.GetPos(&lx, &ly, &lw, &lh)
+Assert(bx >= lx + lw && bx + bw <= ix, "Inline banner overlaps the buttons")
+view.SetMessage("La actualización ha terminado. Puedes reiniciar ahora o más tarde, pero guarda antes todo tu trabajo abierto.")
+Assert(view.Rects["Actions"][4] > 60, "Long banner must move to its own row")
+view.Banner.GetPos(&bx, &by, &bw, &bh)
+view.Install.GetPos(&ix, &iy, &iw, &ih)
+Assert(by + bh <= iy, "Stacked banner overlaps the buttons")
+view.ShowLogs(false)
+view.SetMessage("")
+Assert(view.Banner.Text = texts["StateRestartRequired"], "Empty message must restore the state label")
 view.SetMarquee(true)
 Assert(view.Progress.Marquee, "Marquee did not start")
 view.SetMarquee(false)
@@ -100,6 +121,7 @@ Assert(!view.Progress.Marquee && view.Progress.Value = 100, "Progress must stop 
 
 ; Repaint regression: a simulated border drag must leave the painted panels intact (window surface, not screen).
 state.RecoveryAvailable := -1
+state.Set("Idle") ; short banner label, so the sampled area right of it stays plain panel
 view.ApplyState()
 view.Gui.Show("w960 h620 NoActivate")
 Sleep(300)
@@ -111,14 +133,14 @@ Loop 60 {
 }
 Sleep(300)
 actions := view.Rects["Actions"]
-dc := DllCall("GetDC", "Ptr", view.Gui.Hwnd, "Ptr")
+dc := DllCall("GetDCEx", "Ptr", view.Gui.Hwnd, "Ptr", 0, "UInt", 0x2, "Ptr") ; DCX_CACHE: the whole client surface, child controls included
 try {
     Assert(SamplePixel(12, 300) = 0x111111, "Sidebar pixel sample failed")
     Assert(SamplePixel(actions[1] + 8, actions[2] + 30) = 0x222222, "Actions panel fill sample failed")
     Loop 5 {
         row := actions[2] + A_Index * 10
-        Loop 12
-            Assert(SamplePixel(actions[1] + 40 + A_Index * 20, row) = 0x222222, "Resize left artefacts in the actions panel")
+        Loop 9
+            Assert(SamplePixel(actions[1] + 120 + A_Index * 20, row) = 0x222222, "Resize left artefacts in the actions panel")
     }
 } finally {
     DllCall("ReleaseDC", "Ptr", view.Gui.Hwnd, "Ptr", dc)

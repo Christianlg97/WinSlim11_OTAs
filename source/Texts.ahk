@@ -22,7 +22,7 @@ LoadTexts(path) {
         fields[key] := Trim(SubStr(line, pos + 1))
     }
     for key in ["Brand", "WindowTitle", "AppName", "SidebarSubtitle", "Navigation", "Title", "Subtitle", "PackageTitle", "ChangelogTitle", "Footer", "InstallButton", "LogButton", "CloseButton", "PreviewStatus",
-        "StatusTitle", "StateIdle", "StateChecking", "StateUpdateAvailable", "StateDownloading", "StateVerifying", "StateReadyToInstall", "StateInstalling", "StateRestartRequired", "StateUpToDate", "StateError",
+        "VersionLabel", "StateIdle", "StateChecking", "StateUpdateAvailable", "StateDownloading", "StateVerifying", "StateReadyToInstall", "StateInstalling", "StateRestartRequired", "StateUpToDate", "StateError",
         "RecoveryAvailable", "RollbackAvailable", "RestartButton", "LaterButton", "RetryButton", "InstallingDetail", "InstalledDetail"]
         if !fields.Has(key)
             throw Error("Falta el campo " key " en ui.ini")

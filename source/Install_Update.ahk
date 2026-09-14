@@ -43,10 +43,8 @@ ReleaseMutex(*) {
 }
 
 installState := UpdaterState(previewOnly)
-view := UpdaterView(texts, resources, installState, StartInstall, CloseUI,
+view := UpdaterView(texts, resources, installState, AppVersion(), StartInstall, CloseUI,
     (*) => Run('notepad.exe "' logFile '"'))
-logs := view.Logs
-detail := view.Detail
 view.Show()
 if testMode {
     for name in ["UpdateSCR.cmd", "basebandUPD.reg", "ui.ini", "changelog.md", "update.ico"]
@@ -71,6 +69,18 @@ SetUpdaterState(value) {
     view.ApplyState()
 }
 
+AppVersion() {
+    ; The compiled EXE carries the version resource written by ;@Ahk2Exe-SetVersion; the source reads the same directive.
+    version := "0.0.0.0"
+    try {
+        if A_IsCompiled
+            version := FileGetVersion(A_ScriptFullPath)
+        else if RegExMatch(FileRead(A_ScriptFullPath), "m)^;@Ahk2Exe-SetVersion\s+(\S+)", &match)
+            version := match[1]
+    }
+    return RegExReplace(version, "\.0$")
+}
+
 StartInstall(*) {
     global busy, finished, logFile
     if testMode || previewOnly
@@ -82,6 +92,7 @@ StartInstall(*) {
     }
     busy := true
     SetUpdaterState("Installing")
+    view.SetMessage(view.Text("InstallingDetail"))
     try {
         for name in ["UpdateSCR.cmd", "basebandUPD.reg"]
             if !FileExist(resources "\" name)
@@ -89,7 +100,6 @@ StartInstall(*) {
         logDir := A_AppDataCommon "\WinSlim\OTA\Logs"
         DirCreate(logDir)
         logFile := logDir "\" FormatTime(, "yyyyMMdd-HHmmss") "-" DllCall("GetCurrentProcessId") ".log"
-        detail.Text := view.Text("InstallingDetail")
         view.SetMarquee(true)
         EnvSet("WS_OTA_RES", resources)
         EnvSet("WS_OTA_LOG", logFile)
@@ -97,17 +107,16 @@ StartInstall(*) {
         if code != 0
             throw Error("El CMD terminó con el código " code ". Puede haber cambios parciales; consulta el registro.")
         SetUpdaterState("RestartRequired")
-        detail.Text := view.Text("InstalledDetail")
+        view.SetMessage(view.Text("InstalledDetail"))
         finished := true
     } catch as failure {
         SetUpdaterState("Error")
-        detail.Text := failure.Message
+        view.SetMessage(failure.Message)
     } finally {
         view.SetMarquee(false)
         view.SetProgress(finished ? 100 : 0)
         busy := false
-        view.ApplyState()
-        logs.Visible := logFile != "" && FileExist(logFile)
+        view.ShowLogs(logFile != "" && FileExist(logFile))
     }
 }
 
