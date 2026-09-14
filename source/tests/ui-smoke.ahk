@@ -29,7 +29,7 @@ SamplePixel(x, y) {
 CloseView(*) {
     view.Destroy()
     if closing
-        FileAppend("PASS: texts, notes formatting, wrap, layout, focus, states, progress, repaint and close`n", "*")
+        FileAppend("PASS: texts, notes formatting, wrap, layout, focus, scroll thumb, states, progress, repaint, hover and close`n", "*")
     ExitApp(0)
 }
 
@@ -59,6 +59,7 @@ for size in [[860,560], [960,620], [1200,760]] {
     Assert(cy + ch < size[2], "Actions exceed window")
     style := DllCall("GetWindowLongPtr", "Ptr", view.Notes.Hwnd, "Int", -16, "Ptr")
     Assert(!(style & 0x100000), "Horizontal scroll style enabled")
+    Assert(!(style & 0x200000), "Native vertical scroll bar must stay hidden")
     Assert(style & 0x800, "Notes must be read-only")
 }
 ; Query the native heading charFormat, not only the parser output.
@@ -113,6 +114,42 @@ Assert(by + bh <= iy, "Stacked banner overlaps the buttons")
 view.ShowLogs(false)
 view.SetMessage("")
 Assert(view.Banner.Text = texts["StateRestartRequired"], "Empty message must restore the state label")
+
+; Notes scrolling: the painted thumb follows the scroll position, can be dragged and pages on track clicks.
+longNotes := ""
+Loop 40
+    longNotes .= "- Línea " A_Index "`n"
+view.Notes.SetMarkdown(longNotes)
+metrics := view.Notes.Metrics()
+Assert(metrics.Content > metrics.View, "Long notes must overflow the viewport")
+gutter := view.PhysicalRect(view.Rects["Gutter"])
+thumb := view.ThumbRect()
+Assert(thumb != "" && thumb[2] = gutter[2] && thumb[4] < gutter[4], "Thumb must start at the top of the gutter")
+view.Notes.ScrollTo(100000)
+maxPos := view.Notes.Metrics().Pos
+Assert(maxPos > 0 && Abs(maxPos - (metrics.Content - metrics.View)) <= 4, "ScrollTo must clamp to the end")
+thumb := view.ThumbRect()
+Assert(Abs(thumb[2] + thumb[4] - (gutter[2] + gutter[4])) <= 3, "Thumb must end at the bottom of the gutter")
+view.Notes.ScrollTo(0)
+thumb := view.ThumbRect()
+px := thumb[1] + 2, py := thumb[2] + 4, travel := gutter[4] - thumb[4]
+view.OnMouse(0, (py << 16) | px, 0x201, view.Gui.Hwnd)
+Assert(view.Drag != "", "Pressing the thumb must start a drag")
+view.OnMouse(0, ((py + travel // 2) << 16) | px, 0x200, view.Gui.Hwnd)
+dragged := view.Notes.Metrics().Pos
+Assert(Abs(dragged - maxPos / 2) <= 4, "Dragging the thumb must scroll proportionally")
+view.OnMouse(0, ((py + travel // 2) << 16) | px, 0x202, view.Gui.Hwnd)
+Assert(view.Drag = "", "Releasing must end the drag")
+view.OnMouse(0, ((gutter[2] + gutter[4] - 2) << 16) | px, 0x201, view.Gui.Hwnd)
+Assert(view.Notes.Metrics().Pos > dragged, "Clicking the track below the thumb must page down")
+view.Notes.ScrollTo(0)
+SendMessage(0x20A, (-120 << 16) & 0xFFFFFFFF, 0, view.Notes.Hwnd) ; one wheel notch down, unfocused
+wheeled := view.Notes.Metrics().Pos
+Assert(wheeled > 0, "Wheel over the notes must scroll them without focus")
+SendMessage(0x20A, (120 << 16) & 0xFFFFFFFF, 0, view.Notes.Hwnd)
+Assert(view.Notes.Metrics().Pos < wheeled, "Wheel up must scroll back")
+view.Notes.SetMarkdown("## Titulo`n- Texto")
+Assert(view.ThumbRect() = "", "Short notes must not show a thumb")
 view.SetMarquee(true)
 Assert(view.Progress.Marquee, "Marquee did not start")
 view.SetMarquee(false)
@@ -142,6 +179,18 @@ try {
         Loop 9
             Assert(SamplePixel(actions[1] + 120 + A_Index * 20, row) = 0x222222, "Resize left artefacts in the actions panel")
     }
+    ; Hover: a hot button is drawn with a different face; the subclass toggles the state on move/leave.
+    view.Close.GetPos(&cx, &cy, &cw, &ch)
+    idle := SamplePixel(cx + 10, cy + ch // 2)
+    UpdaterView.HotButtons[view.Close.Hwnd] := true
+    DllCall("InvalidateRect", "Ptr", view.Close.Hwnd, "Ptr", 0, "Int", 0)
+    Sleep(200)
+    Assert(SamplePixel(cx + 10, cy + ch // 2) != idle, "Hot button must change its face colour")
+    UpdaterView.HotButtons.Delete(view.Close.Hwnd)
+    UpdaterView.OnButtonMessage(view.Close.Hwnd, 0x200, 0, 0, 1, 0)
+    Assert(UpdaterView.HotButtons.Has(view.Close.Hwnd), "Mouse move must mark the button hot")
+    UpdaterView.OnButtonMessage(view.Close.Hwnd, 0x2A3, 0, 0, 1, 0)
+    Assert(!UpdaterView.HotButtons.Has(view.Close.Hwnd), "Mouse leave must clear the hot state")
 } finally {
     DllCall("ReleaseDC", "Ptr", view.Gui.Hwnd, "Ptr", dc)
 }

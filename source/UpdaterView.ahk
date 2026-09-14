@@ -12,14 +12,19 @@ class UpdaterView {
     ; Palette in RGB. Every entry is a grey, so the same values serve GDI COLORREF calls.
     static Colors := {Window: 0x191919, Sidebar: 0x111111, SidebarBorder: 0x303030,
         Panel: 0x222222, PanelBorder: 0x383838, Pill: 0x2B2B2B, PillText: 0xF0F0F0, Indicator: 0xFFFFFF,
-        Track: 0x393939, Bar: 0xD8D8D8}
+        Track: 0x393939, Bar: 0xD8D8D8, Thumb: 0x666666, ThumbActive: 0x8C8C8C}
     static Radius := {Panel: 10, Pill: 8, Button: 8}
+    static GutterWidth := 12
+    ; Owner-drawn buttons get no hot state from comctl32: a subclass tracks it per HWND.
+    static HotButtons := Map()
+    static ButtonProc := 0
 
     __New(texts, resources, state, version, onInstall, onClose, onLog) {
         this.Texts := texts
         this.State := state
         this.AppVersion := version
         this.Message := ""
+        this.Drag := ""
         this.ButtonStyles := Map()
         this.Rects := Map()
         this.Scale := A_ScreenDPI / 96
@@ -48,7 +53,7 @@ class UpdaterView {
         window.SetFont("s12 Bold cF0F0F0")
         this.PackageTitle := window.AddText("x0 y0 w100 h24 Background222222", this.Text("PackageTitle"))
         this.NotesTitle := window.AddText("x0 y0 w100 h28 Background222222", this.Text("ChangelogTitle"))
-        this.Notes := ChangelogView(window, ChangelogView.Read(resources "\changelog.md"))
+        this.Notes := ChangelogView(window, ChangelogView.Read(resources "\changelog.md"), (*) => this.InvalidateGutter())
         window.SetFont("s9 Norm cB6B6B6")
         this.Detail := window.AddText("x0 y0 w100 h38 Background222222", this.Text("Footer"))
         this.Recovery := window.AddText("x0 y0 w100 h24 Hidden Background222222", "")
@@ -73,6 +78,10 @@ class UpdaterView {
         this.DrawHandler := ObjBindMethod(this, "DrawButton")
         OnMessage(0x2B, this.DrawHandler)
         this.MarqueeHandler := ObjBindMethod(this, "AdvanceMarquee")
+        ; Mouse on the window itself: the painted scroll thumb and wheel scrolling over the notes gutter.
+        this.MouseHandler := ObjBindMethod(this, "OnMouse")
+        for message in [0x200, 0x201, 0x202, 0x20A]
+            OnMessage(message, this.MouseHandler)
         try DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", window.Hwnd, "UInt", 20, "Int*", 1, "UInt", 4) ; dark title bar
         try DllCall("dwmapi\DwmSetWindowAttribute", "Ptr", window.Hwnd, "UInt", 33, "Int*", 2, "UInt", 4) ; rounded frame on Windows 11
         this.ApplyState()
@@ -94,6 +103,11 @@ class UpdaterView {
         OnMessage(0xF, this.PaintHandler, 0)
         OnMessage(0x14, this.EraseHandler, 0)
         OnMessage(0x2B, this.DrawHandler, 0)
+        for message in [0x200, 0x201, 0x202, 0x20A]
+            OnMessage(message, this.MouseHandler, 0)
+        if this.Drag
+            DllCall("ReleaseCapture")
+        this.Notes.Release()
         this.Gui.Destroy()
         DllCall("DeleteObject", "Ptr", this.PillFont)
         Painter.Shutdown()
@@ -148,12 +162,14 @@ class UpdaterView {
         this.Rects["Notes"] := [x, notesY, w, notesBottom - notesY]
         this.Rects["Actions"] := [x, actionY, w, actionsH]
         this.Rects["Progress"] := [x + padding, progressY, inner, progressH]
+        noteHeight := Max(80, detailY - 8 - noteTop)
+        this.Rects["Gutter"] := [x + w - padding - UpdaterView.GutterWidth, noteTop, UpdaterView.GutterWidth, noteHeight]
         this.VersionLabel.Move(24, height - 46, 184, 24)
         this.Title.Move(x, 28, w, 42)
         this.Subtitle.Move(x, 80, w, 32)
         this.PackageTitle.Move(x + padding, packageY + 15, inner, 24)
         this.NotesTitle.Move(x + padding, notesY + 15, inner, 28)
-        this.Notes.Move(x + padding, noteTop, inner, Max(80, detailY - 8 - noteTop))
+        this.Notes.Move(x + padding, noteTop, inner - UpdaterView.GutterWidth, noteHeight)
         this.Detail.Move(x + padding, detailY, inner, 38)
         this.Recovery.Move(x + padding, recoveryY, inner, 24)
         if stacked
@@ -289,8 +305,80 @@ class UpdaterView {
         canvas.FillRoundRect([pill[1] + this.Physical(4), pill[2] + (pill[4] - markHeight) // 2, this.Physical(3), markHeight],
             this.Physical(1.5), colors.Indicator)
         this.DrawProgress(canvas, colors)
+        thumb := this.ThumbRect()
+        if thumb
+            canvas.FillRoundRect(thumb, thumb[3] / 2, this.Drag ? colors.ThumbActive : colors.Thumb)
         canvas := "" ; flush GDI+ before drawing text with GDI
         this.DrawPillText(dc, pill, colors)
+    }
+
+    ; Painted scroll thumb for the notes: physical rectangle, or "" when the text fits.
+    ThumbRect() {
+        if !this.Rects.Has("Gutter")
+            return ""
+        m := this.Notes.Metrics()
+        if m.Content <= m.View
+            return ""
+        gutter := this.PhysicalRect(this.Rects["Gutter"])
+        length := Max(this.Physical(24), Round(gutter[4] * m.View / m.Content))
+        offset := Round((gutter[4] - length) * Min(m.Pos, m.Content - m.View) / (m.Content - m.View))
+        width := this.Physical(6)
+        return [gutter[1] + (gutter[3] - width) // 2, gutter[2] + offset, width, length]
+    }
+
+    InvalidateGutter() {
+        if !this.Rects.Has("Gutter")
+            return
+        r := this.PhysicalRect(this.Rects["Gutter"])
+        rect := Buffer(16)
+        NumPut("Int", r[1], "Int", r[2], "Int", r[1] + r[3], "Int", r[2] + r[4], rect)
+        DllCall("InvalidateRect", "Ptr", this.Gui.Hwnd, "Ptr", rect, "Int", 0)
+    }
+
+    static Inside(rect, x, y) {
+        return rect && x >= rect[1] && x < rect[1] + rect[3] && y >= rect[2] && y < rect[2] + rect[4]
+    }
+
+    OnMouse(wParam, lParam, msg, hwnd) {
+        if hwnd != this.Gui.Hwnd
+            return
+        x := lParam & 0xFFFF, y := (lParam >> 16) & 0xFFFF
+        x -= x > 0x7FFF ? 0x10000 : 0, y -= y > 0x7FFF ? 0x10000 : 0
+        if msg = 0x20A { ; WM_MOUSEWHEEL over the gutter: hand it to the notes
+            DllCall("ScreenToClient", "Ptr", hwnd, "Int64*", &client := (y << 32) | (x & 0xFFFFFFFF))
+            if UpdaterView.Inside(this.PhysicalRect(this.Rects["Notes"]), client & 0xFFFFFFFF, client >> 32) {
+                SendMessage(0x20A, wParam, lParam, this.Notes.Hwnd)
+                return 0
+            }
+            return
+        }
+        if msg = 0x201 { ; WM_LBUTTONDOWN: drag the thumb, or page when clicking the track
+            thumb := this.ThumbRect()
+            if !thumb || !UpdaterView.Inside(this.PhysicalRect(this.Rects["Gutter"]), x, y)
+                return
+            m := this.Notes.Metrics()
+            if UpdaterView.Inside(thumb, x, y) {
+                gutter := this.PhysicalRect(this.Rects["Gutter"])
+                this.Drag := {StartY: y, StartPos: m.Pos, Range: m.Content - m.View, Travel: Max(1, gutter[4] - thumb[4])}
+                DllCall("SetCapture", "Ptr", hwnd)
+                this.InvalidateGutter()
+            } else {
+                this.Notes.ScrollTo(m.Pos + (y < thumb[2] ? -m.View : m.View))
+            }
+            return 0
+        }
+        if !this.Drag
+            return
+        if msg = 0x200 { ; WM_MOUSEMOVE while dragging
+            this.Notes.ScrollTo(this.Drag.StartPos + Round((y - this.Drag.StartY) * this.Drag.Range / this.Drag.Travel))
+            return 0
+        }
+        if msg = 0x202 { ; WM_LBUTTONUP
+            this.Drag := ""
+            DllCall("ReleaseCapture")
+            this.InvalidateGutter()
+            return 0
+        }
     }
 
     DrawProgress(canvas, colors) {
@@ -323,7 +411,26 @@ class UpdaterView {
         this.ButtonStyles[ctrl.Hwnd] := primary
         style := DllCall("GetWindowLongPtr", "Ptr", ctrl.Hwnd, "Int", -16, "Ptr")
         DllCall("SetWindowLongPtr", "Ptr", ctrl.Hwnd, "Int", -16, "Ptr", (style & ~0xF) | 0xB) ; BS_OWNERDRAW
+        if !UpdaterView.ButtonProc
+            UpdaterView.ButtonProc := CallbackCreate(ObjBindMethod(UpdaterView, "OnButtonMessage"), "F", 6)
+        DllCall("comctl32\SetWindowSubclass", "Ptr", ctrl.Hwnd, "Ptr", UpdaterView.ButtonProc, "Ptr", 1, "Ptr", 0)
         return ctrl
+    }
+
+    ; Subclass procedure: WM_MOUSEMOVE enters the hot state (and asks for WM_MOUSELEAVE), WM_MOUSELEAVE clears it.
+    static OnButtonMessage(hwnd, msg, wParam, lParam, id, refData) {
+        if msg = 0x200 && !UpdaterView.HotButtons.Has(hwnd) {
+            UpdaterView.HotButtons[hwnd] := true
+            track := Buffer(A_PtrSize = 8 ? 24 : 16, 0) ; TRACKMOUSEEVENT
+            NumPut("UInt", track.Size, "UInt", 2, track) ; TME_LEAVE
+            NumPut("Ptr", hwnd, track, 8)
+            DllCall("TrackMouseEvent", "Ptr", track)
+            DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 0)
+        } else if msg = 0x2A3 && UpdaterView.HotButtons.Has(hwnd) { ; WM_MOUSELEAVE
+            UpdaterView.HotButtons.Delete(hwnd)
+            DllCall("InvalidateRect", "Ptr", hwnd, "Ptr", 0, "Int", 0)
+        }
+        return DllCall("comctl32\DefSubclassProc", "Ptr", hwnd, "UInt", msg, "Ptr", wParam, "Ptr", lParam, "Ptr")
     }
 
     DrawButton(wParam, lParam, *) {
@@ -336,19 +443,22 @@ class UpdaterView {
         right := NumGet(rect, 8, "Int"), bottom := NumGet(rect, 12, "Int")
         flags := NumGet(lParam, 16, "UInt")
         primary := this.ButtonStyles[hwnd], disabled := flags & 4, pressed := flags & 1
-        face := disabled ? 0x292929 : (primary ? (pressed ? 0xBDBDBD : 0xE3E3E3) : (pressed ? 0x393939 : 0x2B2B2B))
+        hot := !disabled && UpdaterView.HotButtons.Has(hwnd)
+        face := disabled ? 0x292929
+            : primary ? (pressed ? 0xC4C4C4 : hot ? 0xF7F7F7 : 0xE3E3E3)
+            : (pressed ? 0x252525 : hot ? 0x3E3E3E : 0x2B2B2B)
         box := [left, top, right - left, bottom - top]
         radius := this.Physical(UpdaterView.Radius.Button)
         canvas := Painter(dc)
         canvas.FillRect(box, UpdaterView.Colors.Panel) ; buttons sit on a panel: keep the corners seamless
         canvas.FillRoundRect(box, radius, face)
         if !primary && !disabled
-            canvas.StrokeRoundRect(box, radius, 0x555555)
+            canvas.StrokeRoundRect(box, radius, hot ? 0x7C7C7C : 0x555555)
         if flags & 0x10 ; keyboard focus ring
             canvas.StrokeRoundRect([left + 2, top + 2, right - left - 4, bottom - top - 4], Max(1, radius - 2), primary ? 0x171717 : 0xDDDDDD)
         canvas := ""
         DllCall("SetBkMode", "Ptr", dc, "Int", 1)
-        DllCall("SetTextColor", "Ptr", dc, "UInt", disabled ? 0x999999 : (primary ? 0x171717 : 0xDDDDDD))
+        DllCall("SetTextColor", "Ptr", dc, "UInt", disabled ? 0x999999 : primary ? 0x171717 : pressed ? 0xBBBBBB : hot ? 0xF5F5F5 : 0xDDDDDD)
         font := SendMessage(0x31, 0, 0, hwnd)
         previous := DllCall("SelectObject", "Ptr", dc, "Ptr", font, "Ptr")
         DllCall("DrawText", "Ptr", dc, "Str", GuiCtrlFromHwnd(hwnd).Text, "Int", -1, "Ptr", rect, "UInt", 0x825) ; centred, single line, no prefix
