@@ -12,7 +12,7 @@ Aplicación AutoHotkey v2 para WinSlim 11 y WinSlim 10, con icono `wu.ico` y not
 
 
 
-**Estado actual: motor habilitado** (`previewOnly := false` en `Install_Update.ahk`). Los EXE requieren administrador; **Instalar actualización** ejecuta `Resources\UpdateSCR.cmd` elevado, y ese CMD importa `Resources\basebandUPD.reg`. Al terminar se ofrece reiniciar ahora o más tarde. No se utiliza VBS, RunOnce ni notificación posterior al arranque. Con `previewOnly := true` el botón queda deshabilitado y no se ejecuta nada.
+**Estado actual: motor habilitado** (`previewOnly := false` en `Install_Update.ahk`). Los EXE requieren administrador; **Instalar actualización** importa `Resources\basebandUPD.reg` y después ejecuta `Resources\UpdateSCR.cmd`, ambos elevados. Al terminar se ofrece reiniciar ahora o más tarde. No se utiliza VBS, RunOnce ni notificación posterior al arranque. Con `previewOnly := true` el botón queda deshabilitado y no se ejecuta nada.
 
 ## Organización
 
@@ -47,8 +47,8 @@ Dentro de `source/packages/WinSlim11/Resources` o `source/packages/WinSlim10/Res
 | --- | --- |
 | `changelog.md` | Descripción visible en la interfaz. Guardar como UTF-8. |
 | `ui.ini` | Títulos, resumen, etiquetas y botones. Guardar como UTF-8. |
-| `UpdateSCR.cmd` | Operaciones del parche. La plantilla importa `basebandUPD.reg`, comprueba el resultado y termina con código 0; añade ahí los pasos adicionales. |
-| `basebandUPD.reg` | Cambios de registro que importa el CMD. Formato regedit 5.00 (UTF-16 LE) con raíces completas: `HKEY_LOCAL_MACHINE`, no `HKLM` (las abreviadas se ignoran en silencio). |
+| `UpdateSCR.cmd` | Operaciones adicionales del parche. El EXE ya ha importado `basebandUPD.reg` cuando lo ejecuta; cada paso comprueba su resultado y el CMD termina con código 0. |
+| `basebandUPD.reg` | Cambios de registro que importa el EXE antes del CMD. Formato regedit 5.00 (UTF-16 LE) con raíces completas: `HKEY_LOCAL_MACHINE`, no `HKLM` (las abreviadas se ignoran en silencio). |
 | Campo `Brand` de `ui.ini` | Marca de la variante: WinSlim 11 o WinSlim 10. |
 
 El icono compartido se edita en `source/assets/update.ico`. El build lo incorpora al EXE y lo copia a cada paquete.
@@ -121,8 +121,8 @@ También puedes compilar con Ahk2Exe: fuente `source/Install_Update.ahk`, base `
 
 1. Windows exige permisos de administrador mediante el manifiesto `requireAdministrator`. Cancelar UAC impide abrir la aplicación.
 2. El EXE lee todos los textos descriptivos y la marca desde `Resources/ui.ini`, el icono y las notas desde `Resources/changelog.md`, junto al ejecutable.
-3. Muestra la variante, sus notas y la versión del programa. **Instalar actualización** ejecuta `Resources\UpdateSCR.cmd` elevado y guarda su salida en `%ProgramData%\WinSlim\OTA\Logs\<fecha>-<pid>.log` (botón **Ver actividad**).
-4. Si el CMD devuelve 0, la franja muestra `InstalledDetail` y los botones pasan a **Reiniciar ahora** / **Más tarde**; si no, muestra el error y ofrece **Reintentar**. Cerrar termina la aplicación. No crea RunOnce, tareas programadas ni avisos para el siguiente arranque.
+3. Muestra la variante, sus notas y la versión del programa. **Instalar actualización** importa `Resources\basebandUPD.reg` con `reg import`, después ejecuta `Resources\UpdateSCR.cmd` elevado y guarda la salida de ambos en `%ProgramData%\WinSlim\OTA\Logs\<fecha>-<pid>.log` (botón **Ver actividad**).
+4. Si el REG se importa y el CMD devuelve 0, la franja muestra `InstalledDetail` y los botones pasan a **Reiniciar ahora** / **Más tarde**; si no, muestra el error y ofrece **Reintentar**. Cerrar termina la aplicación. No crea RunOnce, tareas programadas ni avisos para el siguiente arranque.
 
 Para ejecutar la versión actual abre `Output/WinSlim11/Install_Update.exe` o `Output/WinSlim10/Install_Update.exe`. El equipo destinatario no necesita AutoHotkey instalado. Ambos son x64; WinSlim 10 tiene su marca y recursos separados, pero todavía requiere pruebas en ese sistema.
 
@@ -141,9 +141,9 @@ No distribuyas source ni .build. Los dos paquetes son independientes y pueden te
 
 `previewOnly` en `Install_Update.ahk` decide si el motor está activo. Con `true` el botón queda deshabilitado y no se ejecuta nada; con `false` (estado actual) **Instalar actualización** lanza el motor.
 
-El motor ejecuta el CMD elevado de forma síncrona, captura su salida en `%ProgramData%\WinSlim\OTA\Logs` y comprueba el código de salida. **El EXE no importa el REG por separado**: es el CMD quien lo hace. La plantilla de `UpdateSCR.cmd` importa `basebandUPD.reg` con `reg import`, comprueba `errorlevel` y termina con 0; cualquier operación adicional debe ir detrás con su propia comprobación (`if errorlevel 1 exit /b N`). El CMD recibe `%WS_OTA_RES%` (carpeta Resources) y `%WS_OTA_LOG%` (archivo de registro) y fuerza UTF-8 (`chcp 65001`) para que el log se lea bien. Al ejecutarse elevado, las claves `HKEY_CURRENT_USER` del REG se aplican al perfil de la cuenta que aprobó el UAC.
+El motor ejecuta dos pasos elevados y síncronos, en este orden: primero importa `basebandUPD.reg` con `reg import` y, solo si termina con 0, ejecuta `UpdateSCR.cmd`. Captura la salida de ambos en `%ProgramData%\WinSlim\OTA\Logs` y comprueba cada código de salida; un fallo del REG detiene la instalación sin ejecutar el CMD. **El EXE importa el REG siempre, antes del CMD**, de modo que el CMD no debe importarlo: la plantilla de `UpdateSCR.cmd` solo contiene las operaciones adicionales del parche, cada una con su propia comprobación (`if errorlevel 1 exit /b N`), y termina con 0. El CMD recibe `%WS_OTA_RES%` (carpeta Resources) y `%WS_OTA_LOG%` (archivo de registro) y fuerza UTF-8 (`chcp 65001`) para que el log se lea bien; el motor hace lo mismo al importar el REG. Al ejecutarse elevado, las claves `HKEY_CURRENT_USER` del REG se aplican al perfil de la cuenta que aprobó el UAC.
 
-Para probar un CMD sin tocar el equipo, copia la plantilla a una carpeta temporal con un `basebandUPD.reg` inofensivo (por ejemplo una clave bajo `HKEY_CURRENT_USER\Software`), define `WS_OTA_RES` y `WS_OTA_LOG` y ejecútalo con la misma orden que usa el motor: `cmd /D /V:OFF /S /C ""%WS_OTA_RES%\UpdateSCR.cmd" >> "%WS_OTA_LOG%" 2>&1"`.
+Para probar un CMD sin tocar el equipo, copia la plantilla a una carpeta temporal, define `WS_OTA_RES` y `WS_OTA_LOG` y ejecútalo con la misma orden que usa el motor: `cmd /D /V:OFF /S /C ""%WS_OTA_RES%\UpdateSCR.cmd" >> "%WS_OTA_LOG%" 2>&1"`. El paso del REG se prueba aparte, con un `basebandUPD.reg` inofensivo (por ejemplo una clave bajo `HKEY_CURRENT_USER\Software`) y la orden equivalente: `cmd /D /V:OFF /S /C "chcp 65001 >nul & reg.exe import "%WS_OTA_RES%\basebandUPD.reg" >> "%WS_OTA_LOG%" 2>&1"`.
 
 La barra es indeterminada (marquesina) mientras se ejecuta un CMD arbitrario y pasa al 100 % al terminar. No hay rollback automático, recuperación transaccional, firma del paquete ni validación de builds. Un fallo podría dejar cambios parciales: deben resolverse y probarse esos aspectos antes de distribuir parches reales.
 
@@ -158,7 +158,7 @@ La barra es indeterminada (marquesina) mientras se ejecuta un CMD arbitrario y p
 
 `Install_Update.exe --self-test` construye la interfaz, verifica archivos obligatorios y sale sin instalar. También exige administrador. Ejecútalo sobre `Output/<variante>/Install_Update.exe` tras cada build completo y comprueba que el código de salida es 0 (2 indica un recurso ausente). No se aplicaron parches al equipo durante el desarrollo.
 
-Para una actualización real, probar en máquinas virtuales desechables de cada sistema: éxito, error del CMD, recurso ausente, cancelación de UAC, rutas con espacios, notas largas y reinicio diferido.
+Para una actualización real, probar en máquinas virtuales desechables de cada sistema: éxito, error del REG, error del CMD, recurso ausente, cancelación de UAC, rutas con espacios, notas largas y reinicio diferido.
 
 ## Fuente única de los textos descriptivos
 

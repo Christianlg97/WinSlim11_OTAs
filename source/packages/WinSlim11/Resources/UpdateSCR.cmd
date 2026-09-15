@@ -1,21 +1,60 @@
 @echo off
 setlocal
 chcp 65001 >nul
-rem Operaciones de este parche. Install_Update.exe ejecuta el CMD elevado, guarda toda su salida en
-rem %WS_OTA_LOG% y da la instalacion por buena solo si termina con codigo 0.
-rem %WS_OTA_RES% es la carpeta Resources (se rellena aqui si el CMD se ejecuta a mano).
-if not defined WS_OTA_RES set "WS_OTA_RES=%~dp0."
+rem Operaciones adicionales de este parche. Install_Update.exe importa primero basebandUPD.reg y despues
+rem ejecuta este CMD elevado, guarda toda su salida en %WS_OTA_LOG% y da la instalacion por buena solo
+rem si termina con codigo 0. No importes aqui el REG: el EXE ya lo ha aplicado.
 
-echo [%date% %time%] Importando basebandUPD.reg
-reg import "%WS_OTA_RES%\basebandUPD.reg"
-if errorlevel 1 (
-    echo ERROR: no se pudo importar basebandUPD.reg
+set "DEST=C:\WSCore\Components\WinSlimUpdate"
+set "SOURCE=%~dp0Content"
+
+echo [%date% %time%] Actualizando WinSlimUpdate...
+
+rem ============================================================
+rem Comprobar que existe la carpeta Content
+rem ============================================================
+if not exist "%SOURCE%\" (
+    echo ERROR: No se encuentra la carpeta Content:
+    echo "%SOURCE%"
     exit /b 1
 )
 
-rem Anade aqui otras operaciones; cada una debe comprobar su resultado:
-rem    comando
-rem    if errorlevel 1 exit /b 2
+rem ============================================================
+rem Si existe el destino, vaciarlo
+rem Si no existe, crearlo
+rem ============================================================
+if exist "%DEST%\" (
+    echo [%date% %time%] Limpiando carpeta existente...
 
-echo [%date% %time%] Parche aplicado correctamente
+    attrib -r -h -s "%DEST%\*" /s /d >nul 2>&1
+    del /f /q /a "%DEST%\*" >nul 2>&1
+
+    for /d %%D in ("%DEST%\*") do (
+        rd /s /q "%%~fD"
+    )
+) else (
+    echo [%date% %time%] La carpeta no existe. Creandola...
+
+    mkdir "%DEST%"
+    if errorlevel 1 (
+        echo ERROR: No se pudo crear "%DEST%"
+        exit /b 2
+    )
+)
+
+rem ============================================================
+rem Copiar el contenido de Content al destino
+rem ============================================================
+echo [%date% %time%] Copiando contenido...
+
+robocopy "%SOURCE%" "%DEST%" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /XJ /NFL /NDL /NJH /NJS
+
+set "RC=%ERRORLEVEL%"
+
+if %RC% GEQ 8 (
+    echo ERROR: Robocopy fallo con codigo %RC%
+    exit /b 3
+)
+
+echo [%date% %time%] WinSlimUpdate actualizado correctamente.
 exit /b 0

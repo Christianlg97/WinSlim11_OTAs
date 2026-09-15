@@ -103,7 +103,13 @@ StartInstall(*) {
         view.SetMarquee(true)
         EnvSet("WS_OTA_RES", resources)
         EnvSet("WS_OTA_LOG", logFile)
-        code := RunWait(A_ComSpec ' /D /V:OFF /S /C ""%WS_OTA_RES%\UpdateSCR.cmd" >> "%WS_OTA_LOG%" 2>&1"', resources, "Hide")
+        ; The updater imports the REG itself, before the CMD, so a package CMD can never skip it.
+        LogLine("Importando basebandUPD.reg")
+        code := RunLogged('chcp 65001 >nul & reg.exe import "%WS_OTA_RES%\basebandUPD.reg"')
+        if code != 0
+            throw Error("No se pudo importar basebandUPD.reg (código " code "). Consulta la actividad.")
+        LogLine("Ejecutando UpdateSCR.cmd")
+        code := RunLogged('"%WS_OTA_RES%\UpdateSCR.cmd"')
         if code != 0
             throw Error("El CMD terminó con el código " code ". Puede haber cambios parciales; consulta el registro.")
         SetUpdaterState("RestartRequired")
@@ -118,5 +124,15 @@ StartInstall(*) {
         busy := false
         view.ShowLogs(logFile != "" && FileExist(logFile))
     }
+}
+
+; Appends a timestamped line to the activity log, in the same UTF-8 format as the CMD output.
+LogLine(text) {
+    FileAppend("[" FormatTime(, "dd/MM/yyyy HH:mm:ss") "] " text "`r`n", logFile, "UTF-8-RAW")
+}
+
+; Runs a command line through cmd.exe, hidden, appending its output to the activity log; returns the exit code.
+RunLogged(command) {
+    return RunWait(A_ComSpec ' /D /V:OFF /S /C "' command ' >> "%WS_OTA_LOG%" 2>&1"', resources, "Hide")
 }
 
