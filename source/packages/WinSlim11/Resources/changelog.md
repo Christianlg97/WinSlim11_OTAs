@@ -1,15 +1,8 @@
-﻿## Actualización de WinSlimUpdate 3.0.8
+﻿## Desactivación de actualizaciones internas de Microsoft Edge
 
-- Se corrigen diversos errores y problemas detectados en la interfaz.
-- Se rediseña la interfaz, incorporando un nuevo banner con accesos y acciones útiles cuando se detectan actualizaciones de Windows.
-- Se integra la infraestructura base del nuevo sistema de actualizaciones OTA de WinSlim.
+- Se ha desactivado la actualización automática de componentes internos de Microsoft Edge,
+  a través del servicio BITS, las cuales generaban actividad constante de red, CPU y disco en segundo plano.
+  
+  Con esta medida, se busca evitar la descarga e instalación de actualizaciones no deseadas por el usuario.
+  Además de reducir el consumo de recursos del sistema y mejorar el rendimiento general de Windows.
 
-
-
-## Próximas actualizaciones
-
-- Se continúa trabajando en la integración completa del sistema OTA.
-
-  En próximas versiones, WinSlim comprobará automáticamente durante cada inicio del sistema si existe una nueva actualización disponible.
-
-  Cuando se detecte una actualización, se mostrará una notificación desde la que el usuario podrá descargarla e instalarla o ignorarla.
